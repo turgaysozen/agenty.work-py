@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Talk with Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f4f8;
+        }
+        #chat-container {
+            width: 100%;
+            max-width: 700px;
+            height: 90vh;
+            max-height: 650px;
+            background-color: #E5E7EB;
+            font-family: 'Inter', sans-serif;
+        }
+        .user-message span {
+            background-color: #DBEAFE;
+            color: #1E3A8A;
+        }
+        .ai-message span {
+            background-color: #D1FAE5;
+            color: #065F46;
+        }
+        #chat {
+            background-color: #FFFFFF;
+            scrollbar-width: thin;
+            scrollbar-color: #D1D5DB #FFFFFF;
+        }
+        #chat::-webkit-scrollbar {
+            width: 8px;
+        }
+        #chat::-webkit-scrollbar-track {
+            background: #FFFFFF;
+            border-radius: 10px;
+        }
+        #chat::-webkit-scrollbar-thumb {
+            background-color: #D1D5DB;
+            border-radius: 10px;
+            border: 2px solid #FFFFFF;
+        }
+        #message::placeholder {
+            color: #9CA3AF;
+        }
+        #message {
+            border-color: #D1D5DB;
+            color: #111827;
+        }
+        #message:focus {
+            border-color: #3B82F6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+        }
+        .typing-indicator {
+            color: #6B7280;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container" class="flex flex-col p-3 sm:p-4 shadow-2xl rounded-xl">
+        <h2 class="text-xl sm:text-2xl text-center font-bold py-3 sm:py-4 text-gray-700 border-b border-gray-300 mb-3">
+            Talk with Agent
+        </h2>
+        <div id="chat" class="text-sm sm:text-md p-3 sm:p-4 rounded-lg shadow-inner border border-gray-200 overflow-y-auto w-full flex-grow">
+            <div id="chat-content" class="space-y-3 sm:space-y-4"></div>
+        </div>
+        <div class="pt-3 mt-auto border-t border-gray-300">
+            <div class="flex space-x-2 sm:space-x-3 items-center">
+                <input id="message" type="text" placeholder="Type your message..." class="flex-grow p-3 text-sm sm:text-base border rounded-lg focus:border-transparent outline-none">
+                <button id="send" class="bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-lg font-semibold transition-colors duration-150 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatContentEl = document.getElementById('chat-content');
+        const messageInputEl = document.getElementById('message');
+        const sendButtonEl = document.getElementById('send');
+        let conversationUUID = "";
+
+        const FASTAPI_PROXY_ENDPOINT = "/proxy-chat";
+
+        function appendMessage(text, sender, isHtml = false) {
+            const messageWrapper = document.createElement('div');
+            const messageBubble = document.createElement('span');
+            messageBubble.className = 'py-2 px-3 sm:py-2 sm:px-4 rounded-xl inline-block max-w-[85%] sm:max-w-[75%] break-words shadow-sm leading-relaxed';
+
+            if (sender === 'user') {
+                messageWrapper.className = 'flex justify-end user-message';
+                messageBubble.textContent = text;
+            } else {
+                messageWrapper.className = 'flex justify-start ai-message';
+                if (isHtml) {
+                    messageBubble.innerHTML = text;
+                } else {
+                    messageBubble.textContent = text;
+                }
+            }
+            messageWrapper.appendChild(messageBubble);
+            chatContentEl.appendChild(messageWrapper);
+            chatContentEl.parentElement.scrollTop = chatContentEl.parentElement.scrollHeight;
+            return messageBubble;
+        }
+
+        function handleSendMessage() {
+            const messageText = messageInputEl.value.trim();
+            if (!messageText) return;
+
+            appendMessage(messageText, 'user');
+            messageInputEl.value = '';
+            messageInputEl.focus();
+
+            const aiBubble = appendMessage('', 'ai', true);
+            aiBubble.innerHTML = `<span class="typing-indicator">Typing...</span>`;
+            let currentAiText = "";
+
+            fetch(FASTAPI_PROXY_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: messageText,
+                    conversation_uuid: conversationUUID
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw err; });
+                }
+                if (!response.body) {
+                    throw new Error("Empty response body from proxy.");
+                }
+                aiBubble.innerHTML = ""; 
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                function processStream({ done, value }) {
+                    if (done) {
+                        return;
+                    }
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    let eolIndex;
+                    while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
+                        const line = buffer.substring(0, eolIndex).trim();
+                        buffer = buffer.substring(eolIndex + 2);
+
+                        if (line.startsWith('data: ')) {
+                            const jsonDataString = line.substring(6);
+                            try {
+                                const jsonData = JSON.parse(jsonDataString);
+                                if(jsonData.error) {
+                                    currentAiText = `<span class="text-red-600 font-medium">Proxy Error: ${jsonData.error}</span>`;
+                                    aiBubble.innerHTML = currentAiText;
+                                    reader.cancel();
+                                    return;
+                                }
+                                if (jsonData.content) {
+                                    currentAiText += jsonData.content;
+                                    aiBubble.textContent = currentAiText;
+                                }
+                                if (jsonData.conversation_uuid) {
+                                    conversationUUID = jsonData.conversation_uuid;
+                                }
+                            } catch (e) {
+                                console.warn("Error parsing JSON from proxy stream:", e, "Data:", jsonDataString);
+                            }
+                        }
+                    }
+                    chatContentEl.parentElement.scrollTop = chatContentEl.parentElement.scrollHeight;
+                    return reader.read().then(processStream);
+                }
+                return reader.read().then(processStream);
+            })
+            .catch(error => {
+                console.error('Error sending message via proxy:', error);
+                let errorMessage = "Error connecting to the server.";
+                if (error && error.detail) {
+                    errorMessage = `Error: ${error.detail}`;
+                } else if (error && error.message) {
+                    errorMessage = `Error: ${error.message}`;
+                }
+                aiBubble.innerHTML = `<span class="text-red-600 font-medium">${errorMessage}</span>`;
+            });
+        }
+
+        sendButtonEl.addEventListener('click', handleSendMessage);
+        messageInputEl.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                handleSendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
