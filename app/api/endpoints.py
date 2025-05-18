@@ -2,10 +2,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
 import os
 import json
-from app.config import STATIC_DIR
-from app.helpers.agent_helpers import stream_agent_response
+from config import STATIC_DIR
+from helpers.agent_helpers import stream_agent_response
 
 router = APIRouter()
+
 
 @router.get("/", response_class=HTMLResponse)
 async def get_chat_page():
@@ -16,6 +17,7 @@ async def get_chat_page():
         return HTMLResponse(content=html_content)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="chat_page.html not found in static directory")
+
 
 @router.post("/proxy-chat")
 async def proxy_chat_endpoint(request: Request):

@@ -1,13 +1,14 @@
 import httpx
 import asyncio
 import json
-from app.config import AGENT_ID, AGENT_API_ENDPOINT_TEMPLATE, AGENT_API_TOKEN
+from config import AGENT_ID, AGENT_API_ENDPOINT_TEMPLATE, AGENT_API_TOKEN
 
 AGENT_API_ENDPOINT = AGENT_API_ENDPOINT_TEMPLATE.format(agent_id=AGENT_ID)
 HEADERS = {
     "Content-Type": "application/json",
     "Authorization": f"Bearer {AGENT_API_TOKEN}",
 }
+
 
 async def stream_agent_response(payload_for_agent: dict, db_conn):
     async with httpx.AsyncClient(timeout=None) as client:
@@ -25,6 +26,7 @@ async def stream_agent_response(payload_for_agent: dict, db_conn):
                                 yield sse_event_data
                                 await asyncio.sleep(0)
                                 
+
 async def talk_with_your_agent(response_data: dict, db_conn):
     if "content" in response_data:
         yield f"data: {json.dumps(response_data)}\n\n"
